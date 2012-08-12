@@ -78,17 +78,19 @@ if (isset($_POST['saveData']) AND $can_read AND $can_write) {
          */
         if (isset($member_custom_fields)) {
             if (is_array($member_custom_fields) && $member_custom_fields) {
+                $data_custom = array();
                 foreach ($member_custom_fields as $fid => $cfield) {
                     // custom field
                     $cf_dbfield = $cfield['dbfield'];
                     if (isset($_POST[$cf_dbfield]) AND trim($_POST[$cf_dbfield]) != '') {
-                        $data[$cf_dbfield] = trim($dbs->escape_string(strip_tags($_POST[$cf_dbfield], $sysconf['content']['allowable_tags'])));
+                        $data_custom[$cf_dbfield] = trim($dbs->escape_string(strip_tags($_POST[$cf_dbfield], $sysconf['content']['allowable_tags'])));
                     }
                 }
             }
         }
 
         $data['member_id'] = $dbs->escape_string($memberID);
+        if (count($data_custom) > 0) $data_custom['member_id'] = $data['member_id'];
         $data['member_name'] = $dbs->escape_string($memberName);
         $data['member_type_id'] = (integer)$_POST['memberTypeID'];
         $data['inst_name'] = trim($dbs->escape_string(strip_tags($_POST['instName'])));
@@ -165,6 +167,13 @@ if (isset($_POST['saveData']) AND $can_read AND $can_write) {
             $old_member_ID = $updateRecordID;
             // update the data
             $update = $sql_op->update('member', $data, "member_id='$updateRecordID'");
+            if (count($data_custom) > 0) {
+                $exist_custom = $dbs->query('SELECT FROM member_custom WHERE member_id=\''.$updateRecordID.'');
+                if ($exist_custom->num_rows > 0)
+                    $sql_op->update('member_custom', $data_custom, "member_id='$updateRecordID'");
+                else
+                    $sql_op->insert('member_custom', $data_custom);
+            }
             if ($update) {
                 // update other tables contain this member ID
                 @$dbs->query('UPDATE loan SET member_id=\''.$data['member_id'].'\' WHERE member_id=\''.$old_member_ID.'\'');
@@ -192,6 +201,8 @@ if (isset($_POST['saveData']) AND $can_read AND $can_write) {
             if (!$mpasswd1 AND !$mpasswd2) { $data['mpasswd'] = 'literal{NULL}'; }
             // insert the data
             $insert = $sql_op->insert('member', $data);
+            if (count($data_custom) > 0)
+                $sql_op->insert('member_custom', $data_custom);
             if ($insert) {
                 utility::jsAlert(__('New Member Data Successfully Saved'));
                 // upload status alert
@@ -255,7 +266,7 @@ if (isset($_POST['saveData']) AND $can_read AND $can_write) {
             WHERE m.member_id=\''.$itemID.'\' GROUP BY m.member_id');
         $loan_d = $loan_q->fetch_row();
         if ($loan_d[2] < 1) {
-            if (!$sql_op->delete('member', "member_id='$itemID'")) {
+            if (!$sql_op->delete('member', "member_id='$itemID'") || !$sql_op->delete('member_custom', "member_id='$itemID'")) {
                 $error_num++;
             } else {
                 // write log
@@ -316,7 +327,7 @@ if (isset($_POST['detail']) OR (isset($_GET['action']) AND $_GET['action'] == 'd
     }
     /* RECORD FORM */
     $itemID = $dbs->escape_string(trim(isset($_POST['itemID'])?$_POST['itemID']:''));
-    $rec_q = $dbs->query("SELECT * FROM member WHERE member_id='$itemID'");
+    $rec_q = $dbs->query("SELECT member_custom.*, member.*, member.member_id FROM member LEFT JOIN member_custom ON member.member_id = member_custom.member_id WHERE member.member_id='$itemID'");
     $rec_d = $rec_q->fetch_assoc();
 
     // create new instance
